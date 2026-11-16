@@ -13,6 +13,11 @@ Build a personal media server setup:
 
 User's timezone is Europe/Berlin. Many German ISPs use DS-Lite (no public IPv4), which matters for remote access.
 
+## Known facts about the user's setup
+- **NVIDIA Shield TV Pro (2019)**, so it can run Plex Media Server.
+- **Plex Pass lifetime**, so remote streaming through Plex costs nothing extra. This removes Plex's biggest downside from Option A.
+- Wants **MyAnimeList metadata**. The old MAL agent no longer works (see "MyAnimeList on Plex" below).
+
 ## Current direction (not final)
 
 Exploring **building on Jellyfin** instead of using Plex. The recommended approach from the chat:
@@ -88,6 +93,30 @@ The repo name suggests an anime-focused library. These are the sources the user 
   - Community **MyAnimeList** plugin (`ryandash/jellyfin-plugin-myanimelist`, uses Jikan), and AnimeMultiSource.
   - Watch-progress sync to MAL/AniList: Ani-Sync (`vosmiic/jellyfin-ani-sync`).
 
+### MyAnimeList on Plex: why the bundle stopped working, and the ways around it (checked 2026-11-16)
+**Why it broke:**
+- MyAnimeList.bundle is a *legacy agent*: Python 2 code running inside Plex's old plug-in framework.
+- **On the Shield, Plex removed that framework completely** starting with PMS 1.41.0 (announced 2024-07-25, "all models"). All unofficial plug-ins (custom agents and scanners) stopped working, and so did Plex's own legacy TMDB/TVDB agents. So on a Shield-hosted server the bundle cannot run at all.
+- On other platforms, PMS 1.43 hides legacy agents by default (they can still be turned back on), and Plex says it will **remove the legacy agent system from new PMS releases in 2026**. Running PMS on a PC just to keep the bundle is a dead end.
+- The bundle itself is barely maintained: last code change 2025-05 (a mapping-file size fix). Earlier breakages came from Jikan API changes (moved to v4 in 2022) and HTTP 429 rate limits.
+
+**The replacement: Plex Custom Metadata Providers** (announced 2025-12-09, PMS 1.43.0+)
+- A provider is just an **HTTP API** that returns metadata in Plex's format. Any language works, and Plex only needs a URL it can reach. You add it under Plex Web → Settings → Metadata Agents → Custom Metadata Providers, then build an "agent" from one or more providers in priority order (e.g. MAL provider + Plex Local Media).
+- Movie and TV libraries only. Current limits: no authentication, no provider-specific preferences, no stream metadata (e.g. subtitles).
+- Docs: developer.plex.tv/pms (Metadata Providers section). Official example: **`plexinc/tmdb-example-provider`** (TypeScript, TMDB, TV, alternate episode orders).
+- **Not yet confirmed:** that the Shield build of PMS shows the Custom Metadata Providers screen. The user should check under Settings → Metadata Agents.
+- The provider has to run on an always-on machine the Shield can reach (PC, NAS, Raspberry Pi, Docker host). It can't sensibly run on the Shield itself.
+
+**Ways to get MAL data back, best first:**
+1. **Run a MAL custom provider** on a PC or other always-on box. Existing community ones (all young, low adoption; check before use):
+   - `PickledCakes/MyAnimeList-Plex-Metadata-Provider`: MIT, Python/Flask, Windows scripts with autostart, explicitly a replacement for Fribb's bundle. Calls **`api.tenrai.org`** (a third-party MAL mirror), **not Jikan**, and calls itself a "PoC". Last push 2026-08.
+   - `Thrathius/plex-anime-metadata-provider`: AniDB HTTP API + MAL via Jikan, self-hostable.
+   - `yotsimitsu/hama-modern`, `angu1ss/plex-anime-provider`, `KurtzPT/kizuna`: HAMA successors (AniDB/TVDB/MAL), very new.
+   - **`natyusha/ShokoRelay`**: the most mature anime provider (GPL-3.0, actively developed). Needs **Shoko Server**, which is AniDB-based. Uses a symlink virtual file system (VFS) so any folder layout works. Includes watch-state sync and automation.
+2. **Build our own MAL provider (fits AniBox)**: a small HTTP service that uses Jikan v4 and Fribb/anime-lists for ID mapping, modeled on `plexinc/tmdb-example-provider`. Gives full control and privacy (no third-party mirror), and the same MAL client code can later feed a Jellyfin setup.
+3. **Kometa** on top of Plex's built-in TV agent: it adds MAL/AniDB ratings and genres through the Plex API (works with a Shield-hosted server). It doesn't replace titles, episodes or posters with MAL's.
+- Known catch for any MAL-based provider: MAL lists each season or sequel as a separate entry, while Plex groups seasons under one show.
+
 ### RasenderRentner/frostbox-releases (friend's app; user has full permission to use it)
 - The repo holds **only a README and release binaries** (tags v0.6.0 to v1.2.0). The source code is not in it.
 - What Frostbox is: a private Windows 10/11 player for series and films **streamed from archive.org**, not a local-library server. UI and docs are in German.
@@ -104,7 +133,10 @@ The repo name suggests an anime-focused library. These are the sources the user 
 ## Open questions / decisions to make
 - Can the friend share the Frostbox **source** repo (private repo access or a copy)? This decides whether the desktop client starts from Frostbox (.NET) or from scratch.
 - Anime metadata route: Shoko Server + Shokofin (most accurate, one more service to run) or plain Jellyfin + AniList/MAL plugins (simpler)?
-- Which Shield model does the user have (Pro or 2019 tube)?
+- Answered: Shield TV Pro 2019 and Plex Pass lifetime. **Open again: stay on Plex (Shield as server + a MAL custom provider) or still move to Jellyfin?**
+- Does the Shield's PMS show "Custom Metadata Providers" under Settings → Metadata Agents?
+- Is there an always-on PC/NAS to run a metadata provider (and the drives, if not on the Shield)?
+- Use an existing MAL provider, or build AniBox's own (Jikan + anime-lists)?
 - Server hardware: existing PC, a new mini PC, or a NAS? (A mini PC with Intel Quick Sync is a common choice for transcoding.)
 - Client tech stack: native Kotlin (Android) + separate desktop app, or Flutter for both, or web tech (Electron/Tauri + TypeScript SDK)? If Frostbox source is available, a .NET desktop client (reusing Frostbox.Core, which is plain net8.0) becomes a fourth option.
 - Who will use it: just the user and family, or friends too? This affects how much remote-access polish is needed.
@@ -145,3 +177,9 @@ The repo name suggests an anime-focused library. These are the sources the user 
 - Shokofin guide: https://jellywatch.app/blog/shokofin-jellyfin-anime-plugin-anidb-complete-guide-2026
 - Jellyfin anime setup overview: https://jellywatch.app/blog/jellyfin-anime-library-complete-setup-anilist-shoko-2026
 - Jellyfin plugins docs: https://jellyfin.org/docs/general/server/plugins
+- Plex on Shield drops plug-ins (2024-07-25): https://forums.plex.tv/t/important-information-for-users-running-plex-media-server-on-nvidia-shield-devices/883484
+- Plex Custom Metadata Providers announcement (2025-12-09): https://forums.plex.tv/t/announcement-custom-metadata-providers/934384
+- Legacy agents hidden/removed thread: https://forums.plex.tv/t/legacy-agents-removed-already-in-pms-1-41-7-9717-2025-04-23/914518
+- MAL provider (community): https://github.com/PickledCakes/MyAnimeList-Plex-Metadata-Provider
+- ShokoRelay: https://github.com/natyusha/ShokoRelay
+- Kometa operations: https://kometa.wiki/en/latest/config/operations/
