@@ -99,6 +99,7 @@ The repo name suggests an anime-focused library. These are the sources the user 
 - **On the Shield, Plex removed that framework completely** starting with PMS 1.41.0 (announced 2024-07-25, "all models"). All unofficial plug-ins (custom agents and scanners) stopped working, and so did Plex's own legacy TMDB/TVDB agents. So on a Shield-hosted server the bundle cannot run at all.
 - On other platforms, PMS 1.43 hides legacy agents by default (they can still be turned back on), and Plex says it will **remove the legacy agent system from new PMS releases in 2026**. Running PMS on a PC just to keep the bundle is a dead end.
 - The bundle itself is barely maintained: last code change 2025-05 (a mapping-file size fix). Earlier breakages came from Jikan API changes (moved to v4 in 2022) and HTTP 429 rate limits.
+- And the API it depends on is gone: **the public Jikan API shut down on 2026-10-01** (see "Jikan shutdown" below).
 
 **The replacement: Plex Custom Metadata Providers** (announced 2025-12-09, PMS 1.43.0+)
 - A provider is just an **HTTP API** that returns metadata in Plex's format. Any language works, and Plex only needs a URL it can reach. You add it under Plex Web → Settings → Metadata Agents → Custom Metadata Providers, then build an "agent" from one or more providers in priority order (e.g. MAL provider + Plex Local Media).
@@ -110,12 +111,39 @@ The repo name suggests an anime-focused library. These are the sources the user 
 **Ways to get MAL data back, best first:**
 1. **Run a MAL custom provider** on a PC or other always-on box. Existing community ones (all young, low adoption; check before use):
    - `PickledCakes/MyAnimeList-Plex-Metadata-Provider`: MIT, Python/Flask, Windows scripts with autostart, explicitly a replacement for Fribb's bundle. Calls **`api.tenrai.org`** (a third-party MAL mirror), **not Jikan**, and calls itself a "PoC". Last push 2026-08.
-   - `Thrathius/plex-anime-metadata-provider`: AniDB HTTP API + MAL via Jikan, self-hostable.
+   - `Thrathius/plex-anime-metadata-provider`: AniDB HTTP API + MAL via Jikan, self-hostable. **Its MAL part is likely broken** (still calls Jikan, last push 2026-08).
    - `yotsimitsu/hama-modern`, `angu1ss/plex-anime-provider`, `KurtzPT/kizuna`: HAMA successors (AniDB/TVDB/MAL), very new.
    - **`natyusha/ShokoRelay`**: the most mature anime provider (GPL-3.0, actively developed). Needs **Shoko Server**, which is AniDB-based. Uses a symlink virtual file system (VFS) so any folder layout works. Includes watch-state sync and automation.
-2. **Build our own MAL provider (fits AniBox)**: a small HTTP service that uses Jikan v4 and Fribb/anime-lists for ID mapping, modeled on `plexinc/tmdb-example-provider`. Gives full control and privacy (no third-party mirror), and the same MAL client code can later feed a Jellyfin setup.
+2. **Build our own MAL provider (fits AniBox)**: a small HTTP service that uses the **official MAL API v2** (free client ID, `X-MAL-CLIENT-ID` header; Jikan is gone) and Fribb/anime-lists for ID mapping, modeled on `plexinc/tmdb-example-provider`. Gives full control and privacy (no third-party mirror), and the same MAL client code can later feed a Jellyfin setup.
 3. **Kometa** on top of Plex's built-in TV agent: it adds MAL/AniDB ratings and genres through the Plex API (works with a Shield-hosted server). It doesn't replace titles, episodes or posters with MAL's.
 - Known catch for any MAL-based provider: MAL lists each season or sequel as a separate entry, while Plex groups seasons under one show.
+
+### Jikan shutdown (2026-10-01): what it breaks (checked in each project's code, 2026-11-17)
+- Timeline: wind-down announced 2026-06-14, brownout from 2026-09-01, public API off on **2026-10-01**. `api.jikan.moe` now hangs or times out (confirmed from this container). The maintainer points to self-hosting jikan-rest. Projects moved to **Tenrai** (`api.tenrai.org/v1`, Jikan-v4 compatible, third party) or the **official MAL API v2**.
+- **Not affected:** Shoko Server, ShokoRelay, Shokofin. None of them call Jikan (grep of current source). Shoko's data comes from **AniDB** (plus TMDB). AniDB entries carry MAL links, so MAL IDs are still visible.
+- **Already switched:**
+  - `ryandash/jellyfin-plugin-myanimelist`: default base URL is now `api.tenrai.org` (updated 2026-11-11).
+  - Kometa: MAL lookups go to the mirror `malapi.animemap.dev/v4/` plus the official MAL API (OAuth via its own client).
+  - `PickledCakes/MyAnimeList-Plex-Metadata-Provider`: Tenrai.
+- **Broken:** Fribb's MyAnimeList.bundle; Thrathius' provider (MAL part). Anything still pointed at `api.jikan.moe`.
+- Risk to note: Tenrai and animemap are single third-party mirrors and could disappear the way Jikan did. The official MAL API needs a client ID, but it's the most durable option.
+- **Fribb/anime-lists is still updated** (automated update 2026-11-12). It now builds from `cedya77/anime-offline-database` (a fork; manami's repo last commit 2026-07) plus `Anime-Lists/anime-lists`. `anime-list-full.json` has 39,745 entries (TV 9,721 · OVA 4,677 · SPECIAL 11,031 · MOVIE 6,495 · ONA 6,377). Fields: `mal_id, anidb_id, anilist_id, tvdb_id, themoviedb_id, imdb_id, kitsu_id, season, type, …`. `collections/` holds bidirectional "related anime" groups per source.
+
+### Shoko risks unrelated to Jikan
+- **AniDB is the single source of truth.** You need an AniDB account. AniDB bans clients that send too many requests (temporary; Shoko throttles requests itself). If AniDB is down, new files don't get matched.
+- TvDB support was removed from Shoko (v5); TMDB covers extra images and descriptions.
+- ShokoRelay needs a Shoko **daily build** and PMS 1.43+ custom providers, which Plex still calls work in progress.
+- The first import **hashes every file completely**, which takes a long time on multi-TB drives.
+- **ShokoRelay's VFS is symlinks inside Shoko's managed folders, and Plex must read them through the same paths.** In practice PMS, Shoko and the drives need to be on the same machine (or a NAS with matching paths). Symlinks created by a PC won't resolve for a Shield-hosted PMS reading the Shield's own USB drives. **So ShokoRelay = move PMS to the PC.**
+- Safe by default: `RenameOnImport` and `MoveOnImport` are both **false** in Shoko's settings, so it doesn't touch your files unless you turn a renamer on.
+- Shoko shows missing-episode counts per type (episodes, specials, credits, trailers, parodies, other), which is how it finds missing OVAs and specials.
+
+### Complete library (OVAs/specials) without changing existing matches: options, easiest first
+Ground rule: **never switch the agent on the existing library.** That re-matches everything. Instead, create a **second library** over the same files (or the ShokoRelay VFS) with the new agent, compare, and delete whichever library you don't want later. Plex allows several libraries over the same folders. Watch states don't carry over automatically to a new library.
+1. **Read-only completeness report (AniBox tool, nothing in Plex changes):** read the existing library through the Plex API, take each show's TVDB/TMDB IDs from the matches Plex already has, map them to MAL/AniDB IDs with Fribb/anime-lists, then list related OVAs/specials/movies (from `collections/` + `type`) that aren't in the library. Optional: the official MAL API for titles and dates. Works with PMS staying on the Shield, and touches nothing.
+2. **Plex built-in agent + Season 00:** name specials `S00Exx` in a `Specials` folder and Plex matches them to TVDB/TMDB specials. No new services, but TVDB/TMDB special lists for anime are often incomplete, and Plex has no "missing episodes" view.
+3. **Shoko Server + ShokoRelay (most complete, AniDB numbering):** every OVA/special/credit/trailer is known, missing ones are listed, and files stay untouched (VFS = symlinks). New library on the VFS. Needs PMS on the PC (see VFS note above).
+4. **MAL provider (Tenrai or our own on the official MAL API) in a second library:** MAL-style entries (each OVA its own show). Files need to be organized per MAL entry. No missing detection.
 
 ### RasenderRentner/frostbox-releases (friend's app; user has full permission to use it)
 - The repo holds **only a README and release binaries** (tags v0.6.0 to v1.2.0). The source code is not in it.
@@ -183,3 +211,6 @@ The repo name suggests an anime-focused library. These are the sources the user 
 - MAL provider (community): https://github.com/PickledCakes/MyAnimeList-Plex-Metadata-Provider
 - ShokoRelay: https://github.com/natyusha/ShokoRelay
 - Kometa operations: https://kometa.wiki/en/latest/config/operations/
+- Jikan public API discontinuation (2026-10-01): https://github.com/jikan-me/jikan-rest/issues/613
+- Example migrations away from Jikan: https://github.com/adrmrt/holobot/issues/235 , https://github.com/jamesgallagher/Stremio_AI_Recommender/pull/54
+- Shoko Server: https://github.com/ShokoAnime/ShokoServer (releases: https://github.com/ShokoAnime/ShokoServer/releases)
