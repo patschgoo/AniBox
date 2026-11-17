@@ -17,6 +17,17 @@ User's timezone is Europe/Berlin. Many German ISPs use DS-Lite (no public IPv4),
 - **NVIDIA Shield TV Pro (2019)**, so it can run Plex Media Server.
 - **Plex Pass lifetime**, so remote streaming through Plex costs nothing extra. This removes Plex's biggest downside from Option A.
 - Wants **MyAnimeList metadata**. The old MAL agent no longer works (see "MyAnimeList on Plex" below).
+- **The HDDs are plugged into the Shield**, and the Shield is the Plex server. It wakes up by itself when the drives are accessed (e.g. when streaming through Plex).
+- **No always-on PC.** There is a **Raspberry Pi 400**, but it hosts the user's game website (play + save data). Don't put extra services on it without asking.
+- Consequence: anything that has to run 24/7 next to Plex (Shoko + ShokoRelay, a custom metadata provider) is **out for now**. ShokoRelay would also need Plex moved off the Shield. Tools must be **run-on-demand** from any computer, or be Plex-native.
+
+## Built so far
+- **`library-check/` (AniBox Library Check, v0.1.0)**: run-on-demand, **read-only** report of missing seasons/OVAs/specials/movies per franchise. Python ≥ 3.9, stdlib only, Windows launcher `run-check.bat`. Tests: `cd library-check && python -m unittest discover -s tests -t .` (fake Plex server that refuses non-GET; tested on Python 3.9–3.13).
+  - Reads each Plex item's existing external IDs (modern `Guid` list, legacy thetvdb/themoviedb/imdb agents, HAMA `anidb-`/`tvdbN-`, Fribb's `net.fribbtastic.coding.plex.myanimelist://<malid>`, custom-provider GUIDs) plus every episode (`/library/sections/{id}/all?type=4`, paged with `X-Plex-Container-Start/Size`). Follows the episode ordering (`showOrdering` on the library prefs or the show: tmdb / tvdb / absolute).
+  - Fribb/anime-lists maps each MAL entry to a TVDB/TMDB season and episode offset (season 0 = Specials). That gives Have / Incomplete (x of y) / Missing with the exact place it would go, e.g. "Specials (S00E12)" or "Season 4 (S04E17–E28)". It's "Check" when an entry is somewhere in Specials but the offset is unknown.
+  - **Franchises come from anime-offline-database `relatedAnime`, not Fribb's `collections/`**. Fribb's groups chain unrelated films through shared CMs (a Suntory ad merges *Your Name*, *Mirai*, *Weathering with You*). Rules: bidirectional links only; short clips (< 5 min) and crossover/collab titles ("A x B" with A ≠ B, so "Hunter x Hunter" stays) are leaves, not bridges; groups > 100 entries only list entries within 3 hops of owned ones. A franchise is named after the earliest TV series that's owned or directly related to an owned entry.
+  - Data cache: `%LOCALAPPDATA%\AniBox\data` or `~/.cache/anibox` (`anime-list-full.json` 7.5 MB + reduced `titles-v2.json` 7 MB, refreshed weekly). Settings with the Plex token: `%APPDATA%\AniBox\settings.json` or `~/.config/anibox/settings.json`.
+  - Ideas for later: Plex PIN sign-in instead of copying the token; optional official MAL API for extra titles; a library-level "rename hint" export.
 
 ## Current direction (not final)
 
@@ -162,8 +173,8 @@ Ground rule: **never switch the agent on the existing library.** That re-matches
 - Can the friend share the Frostbox **source** repo (private repo access or a copy)? This decides whether the desktop client starts from Frostbox (.NET) or from scratch.
 - Anime metadata route: Shoko Server + Shokofin (most accurate, one more service to run) or plain Jellyfin + AniList/MAL plugins (simpler)?
 - Answered: Shield TV Pro 2019 and Plex Pass lifetime. **Open again: stay on Plex (Shield as server + a MAL custom provider) or still move to Jellyfin?**
-- Does the Shield's PMS show "Custom Metadata Providers" under Settings → Metadata Agents?
-- Is there an always-on PC/NAS to run a metadata provider (and the drives, if not on the Shield)?
+- Does the Shield's PMS show "Custom Metadata Providers" under Settings → Metadata Agents? (Only matters if an always-on machine shows up later.)
+- Answered: drives are on the Shield; no always-on PC (Pi 400 is busy with the game website).
 - Use an existing MAL provider, or build AniBox's own (Jikan + anime-lists)?
 - Server hardware: existing PC, a new mini PC, or a NAS? (A mini PC with Intel Quick Sync is a common choice for transcoding.)
 - Client tech stack: native Kotlin (Android) + separate desktop app, or Flutter for both, or web tech (Electron/Tauri + TypeScript SDK)? If Frostbox source is available, a .NET desktop client (reusing Frostbox.Core, which is plain net8.0) becomes a fourth option.

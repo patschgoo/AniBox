@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+AniBox-Report-*.html
+AniBox-Report-*.csv
+settings.json
